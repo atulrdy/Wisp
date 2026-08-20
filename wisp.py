@@ -371,7 +371,7 @@ def start_ball():
 
 
 def post(message):
-    data = json.dumps({'message': message}).encode()
+    data = json.dumps({'message': message, 'session': str(os.getppid())}).encode()
     req = urllib.request.Request(
         f'http://localhost:{PORT}',
         data=data,

@@ -86,8 +86,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     var counterLabel: NSTextField!
     var scrollView: NSScrollView!
     var contentStack: FlippedView!
-    var messages: [String] = []
+    var messages: [(text: String, sessionIdx: Int)] = []
+    var sessionMap: [String: Int] = [:]   // ppid → session index
     var infoVisible = false
+
+    static let sessionColors: [NSColor] = [
+        NSColor(red: 0.65, green: 0.5,  blue: 1.0,  alpha: 1),  // purple  (chat 1)
+        NSColor(red: 0.3,  green: 0.85, blue: 0.85, alpha: 1),  // teal    (chat 2)
+        NSColor(red: 1.0,  green: 0.65, blue: 0.2,  alpha: 1),  // orange  (chat 3)
+        NSColor(red: 0.4,  green: 0.9,  blue: 0.5,  alpha: 1),  // green   (chat 4)
+    ]
 
     static let panelW: CGFloat = 300
     static let panelH: CGFloat = 320   // fixed height — history scrolls inside
@@ -190,11 +198,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
     // MARK: Build a single history row
 
-    func makeRow(index: Int, text: String) -> NSView {
-        let numW:  CGFloat = 32
+    func makeRow(index: Int, text: String, sessionIdx: Int) -> NSView {
+        let dotW:  CGFloat = 8
+        let numW:  CGFloat = 28
         let pad:   CGFloat = 10
-        let textX  = 14 + numW
+        let textX  = 14 + dotW + 6 + numW
         let textW  = AppDelegate.panelW - textX - 10
+        let color  = AppDelegate.sessionColors[sessionIdx % AppDelegate.sessionColors.count]
 
         let tmp = NSTextField(wrappingLabelWithString: text)
         tmp.font = NSFont.systemFont(ofSize: 12)
@@ -204,7 +214,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
         let row = NSView(frame: NSRect(x: 0, y: 0, width: AppDelegate.panelW, height: rowH))
 
-        // Separator above every row except first
         if index > 1 {
             let sep = NSView(frame: NSRect(x: 14, y: 0, width: AppDelegate.panelW - 28, height: 0.5))
             sep.wantsLayer = true
@@ -212,10 +221,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             row.addSubview(sep)
         }
 
+        // Colored session dot
+        let dot = NSView(frame: NSRect(x: 14, y: (rowH - dotW) / 2, width: dotW, height: dotW))
+        dot.wantsLayer = true
+        dot.layer?.cornerRadius = dotW / 2
+        dot.layer?.backgroundColor = color.withAlphaComponent(0.8).cgColor
+        row.addSubview(dot)
+
         let numLabel = NSTextField(labelWithString: "#\(index)")
-        numLabel.textColor = NSColor(red: 0.5, green: 0.3, blue: 1.0, alpha: 0.5)
+        numLabel.textColor = color.withAlphaComponent(0.5)
         numLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
-        numLabel.frame = NSRect(x: 14, y: pad, width: numW - 4, height: 13)
+        numLabel.frame = NSRect(x: 14 + dotW + 6, y: pad, width: numW - 4, height: 13)
         row.addSubview(numLabel)
 
         let tf = NSTextField(wrappingLabelWithString: text)
@@ -227,28 +243,34 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         return row
     }
 
-    func appendRowToStack(_ text: String) {
-        let idx = messages.count   // already appended, so count = current index
-        let row = makeRow(index: idx, text: text)
+    func appendRowToStack(_ entry: (text: String, sessionIdx: Int)) {
+        let idx = messages.count
+        let row = makeRow(index: idx, text: entry.text, sessionIdx: entry.sessionIdx)
         let y = contentStack.frame.height
         row.frame.origin.y = y
         contentStack.addSubview(row)
         contentStack.frame.size.height = y + row.frame.height
         scrollToBottom()
-        counterLabel.stringValue = "\(messages.count) actions"
+        let chatCount = sessionMap.count
+        counterLabel.stringValue = chatCount > 1
+            ? "\(messages.count) actions · \(chatCount) chats"
+            : "\(messages.count) actions"
     }
 
     func rebuildStack() {
         contentStack.subviews.forEach { $0.removeFromSuperview() }
         contentStack.frame.size.height = 0
-        for (i, msg) in messages.enumerated() {
-            let row = makeRow(index: i + 1, text: msg)
+        for (i, entry) in messages.enumerated() {
+            let row = makeRow(index: i + 1, text: entry.text, sessionIdx: entry.sessionIdx)
             let y = contentStack.frame.height
             row.frame.origin.y = y
             contentStack.addSubview(row)
             contentStack.frame.size.height = y + row.frame.height
         }
-        counterLabel.stringValue = messages.isEmpty ? "" : "\(messages.count) actions"
+        let chatCount = sessionMap.count
+        counterLabel.stringValue = messages.isEmpty ? "" : (chatCount > 1
+            ? "\(messages.count) actions · \(chatCount) chats"
+            : "\(messages.count) actions")
         scrollToBottom()
     }
 
@@ -317,12 +339,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
     // MARK: Receive message from hook
 
-    func show(_ message: String) {
+    func show(_ message: String, session: String) {
         DispatchQueue.main.async {
-            self.messages.append(message)
+            // Assign a sequential index to each new session
+            if self.sessionMap[session] == nil {
+                self.sessionMap[session] = self.sessionMap.count
+            }
+            let idx = self.sessionMap[session]!
+            let entry = (text: message, sessionIdx: idx)
+            self.messages.append(entry)
             self.orbView.pulse()
             if self.infoVisible {
-                self.appendRowToStack(message)
+                self.appendRowToStack(entry)
             }
         }
     }
@@ -359,7 +387,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
                    let data = String(req[sep.upperBound...]).data(using: .utf8),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: String],
                    let msg  = json["message"] {
-                    self.show(msg)
+                    self.show(msg, session: json["session"] ?? "0")
                 }
                 let resp = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
                 _ = resp.withCString { Darwin.send(client, $0, Int(strlen($0)), 0) }
