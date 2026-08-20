@@ -508,8 +508,6 @@ try:
         description = translate(tool_name, tool_input)
         log(f"Fallback: {description!r}")
 
-    if not ball_running():
-        start_ball()
     post(description)
 except Exception as e:
     log(f"Outer fail: {e}")

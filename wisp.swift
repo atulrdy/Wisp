@@ -220,8 +220,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         scrollView.documentView = contentStack
         cv.addSubview(scrollView)
 
-        let clickDismiss = NSClickGestureRecognizer(target: self, action: #selector(hideInfo))
-        cv.addGestureRecognizer(clickDismiss)
+        // Dismiss by clicking the orb again (toggleInfo) — no click-away here
+        // so tab clicks don't accidentally close the panel
     }
 
     // MARK: Tabs
@@ -446,10 +446,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             addr.sin_port   = CFSwapInt16HostToBig(7891)
             addr.sin_addr.s_addr = INADDR_ANY
 
-            _ = withUnsafeMutablePointer(to: &addr) {
+            let bindResult = withUnsafeMutablePointer(to: &addr) {
                 $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
                     Darwin.bind(sock, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
                 }
+            }
+            guard bindResult == 0 else {
+                // Port already taken — another Wisp is running, exit silently
+                exit(0)
             }
             Darwin.listen(sock, 5)
 
