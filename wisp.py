@@ -370,8 +370,33 @@ def start_ball():
             return
 
 
+def session_title():
+    """Read the conversation title from Claude Code's JSONL file."""
+    session_id = os.environ.get('CLAUDE_CODE_SESSION_ID', '')
+    cwd = os.getcwd()
+    proj = cwd.replace('/', '-')
+    path = os.path.expanduser(f'~/.claude/projects/{proj}/{session_id}.jsonl')
+    title = None
+    try:
+        with open(path) as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                    if d.get('type') == 'custom-title' and d.get('customTitle'):
+                        title = d['customTitle']
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return title or os.path.basename(cwd) or 'Claude'
+
+
 def post(message):
-    data = json.dumps({'message': message, 'session': str(os.getppid())}).encode()
+    data = json.dumps({
+        'message': message,
+        'session': str(os.getppid()),
+        'name': session_title(),
+    }).encode()
     req = urllib.request.Request(
         f'http://localhost:{PORT}',
         data=data,

@@ -399,18 +399,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
     // MARK: Receive from hook
 
-    func show(_ message: String, session: String) {
+    func show(_ message: String, session: String, name: String) {
         DispatchQueue.main.async {
             let isNew = self.sessionMap[session] == nil
             if isNew {
                 let idx = self.sessionMap.count
                 self.sessionMap[session] = idx
-                // Add a colored tab for this chat
-                let color = AppDelegate.sessionColors[idx % AppDelegate.sessionColors.count]
-                let label = "Chat \(idx + 1)"
-                self.addTabButton(label: label, tag: idx)
-                // Tint the orb to pulse in that chat's color when it fires
-                _ = color  // used visually via pulse
+                self.addTabButton(label: name, tag: idx)
             }
 
             let idx   = self.sessionMap[session]!
@@ -468,7 +463,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
                    let data = String(req[sep.upperBound...]).data(using: .utf8),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: String],
                    let msg  = json["message"] {
-                    self.show(msg, session: json["session"] ?? "0")
+                    self.show(msg, session: json["session"] ?? "0", name: json["name"] ?? "Claude")
                 }
                 let resp = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
                 _ = resp.withCString { Darwin.send(client, $0, Int(strlen($0)), 0) }
