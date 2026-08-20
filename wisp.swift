@@ -98,6 +98,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     var sessionMap: [String: Int] = [:]
 
     var infoVisible = false
+    var autoDismissTimer: Timer?
 
     static let sessionColors: [NSColor] = [
         NSColor(red: 0.65, green: 0.5,  blue: 1.0,  alpha: 1),  // purple
@@ -383,6 +384,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
     @objc func hideInfo() {
         guard infoVisible else { return }
+        autoDismissTimer?.invalidate()
+        autoDismissTimer = nil
         infoVisible = false
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.22
@@ -414,15 +417,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             self.orbView.pulse()
             self.updateCounter()
 
-            // Live-append only if this entry passes the active tab filter
-            if self.infoVisible && (self.activeTab == -1 || self.activeTab == idx) {
-                let rowNum = self.contentStack.subviews.count + 1
-                let row = self.makeRow(index: rowNum, text: entry.text, sessionIdx: entry.sessionIdx)
-                let y = self.contentStack.frame.height
-                row.frame.origin.y = y
-                self.contentStack.addSubview(row)
-                self.contentStack.frame.size.height = y + row.frame.height
-                self.scrollToBottom()
+            // Auto-open so the description is visible before the user clicks Allow
+            let wasVisible = self.infoVisible
+
+            // Switch to this chat's tab so the latest action is front and center
+            if self.activeTab != -1 { self.activeTab = idx }
+            self.showInfo()
+
+            if !wasVisible {
+                // Auto-dismiss after 12 s — long enough to read, short enough not to pile up
+                self.autoDismissTimer?.invalidate()
+                self.autoDismissTimer = Timer.scheduledTimer(withTimeInterval: 12, repeats: false) { [weak self] _ in
+                    self?.hideInfo()
+                }
+            } else {
+                // Panel already open — reset the timer so it stays visible for another 12 s
+                self.autoDismissTimer?.invalidate()
+                self.autoDismissTimer = Timer.scheduledTimer(withTimeInterval: 12, repeats: false) { [weak self] _ in
+                    self?.hideInfo()
+                }
             }
         }
     }
