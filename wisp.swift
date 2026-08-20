@@ -3,7 +3,7 @@ import Cocoa
 // MARK: - Helpers
 
 class FlippedView: NSView {
-    override var isFlipped: Bool { true }   // top-to-bottom stacking
+    override var isFlipped: Bool { true }
 }
 
 // MARK: - Orb view
@@ -41,7 +41,6 @@ class OrbView: NSView {
             path.fill()
         }
 
-        // Specular highlight
         let hi = NSBezierPath(ovalIn: NSRect(
             x: r.minX + r.width * 0.25, y: r.maxY - r.height * 0.38,
             width: r.width * 0.35,      height: r.height * 0.22))
@@ -83,22 +82,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     var orbPanel:   NSPanel!
     var infoPanel:  NSPanel!
     var orbView:    OrbView!
+
+    // Header
     var counterLabel: NSTextField!
-    var scrollView: NSScrollView!
+
+    // Tabs
+    var tabBar:     NSView!
+    var tabButtons: [NSButton] = []
+    var activeTab   = -1   // -1 = All, 0+ = session index
+
+    // History
+    var scrollView:   NSScrollView!
     var contentStack: FlippedView!
     var messages: [(text: String, sessionIdx: Int)] = []
-    var sessionMap: [String: Int] = [:]   // ppid → session index
+    var sessionMap: [String: Int] = [:]
+
     var infoVisible = false
 
     static let sessionColors: [NSColor] = [
-        NSColor(red: 0.65, green: 0.5,  blue: 1.0,  alpha: 1),  // purple  (chat 1)
-        NSColor(red: 0.3,  green: 0.85, blue: 0.85, alpha: 1),  // teal    (chat 2)
-        NSColor(red: 1.0,  green: 0.65, blue: 0.2,  alpha: 1),  // orange  (chat 3)
-        NSColor(red: 0.4,  green: 0.9,  blue: 0.5,  alpha: 1),  // green   (chat 4)
+        NSColor(red: 0.65, green: 0.5,  blue: 1.0,  alpha: 1),  // purple
+        NSColor(red: 0.3,  green: 0.85, blue: 0.85, alpha: 1),  // teal
+        NSColor(red: 1.0,  green: 0.65, blue: 0.2,  alpha: 1),  // orange
+        NSColor(red: 0.4,  green: 0.9,  blue: 0.5,  alpha: 1),  // green
     ]
 
-    static let panelW: CGFloat = 300
-    static let panelH: CGFloat = 320   // fixed height — history scrolls inside
+    static let panelW:  CGFloat = 300
+    static let panelH:  CGFloat = 340
+    static let headerH: CGFloat = 36
+    static let tabH:    CGFloat = 32
+
+    var scrollH: CGFloat { AppDelegate.panelH - AppDelegate.headerH - 1 - AppDelegate.tabH - 1 }
 
     func applicationDidFinishLaunching(_: Notification) {
         setupOrb()
@@ -106,7 +119,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         startServer()
     }
 
-    // MARK: Orb panel
+    // MARK: Orb
 
     func setupOrb() {
         let size: CGFloat = 56
@@ -133,10 +146,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         orbPanel.orderFront(nil)
     }
 
-    // MARK: Info panel (history)
+    // MARK: Info panel
 
     func setupInfoPanel() {
         let W = AppDelegate.panelW, H = AppDelegate.panelH
+        let hH = AppDelegate.headerH, tH = AppDelegate.tabH
+
         infoPanel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: W, height: H),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -153,9 +168,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         cv.layer?.borderColor = NSColor(red: 0.5, green: 0.3, blue: 1.0, alpha: 0.35).cgColor
         cv.layer?.borderWidth = 1
 
-        // Header bar
-        let headerH: CGFloat = 36
-        let headerBg = NSView(frame: NSRect(x: 0, y: H - headerH, width: W, height: headerH))
+        // ── Header ────────────────────────────────────────────────────────────
+        let headerBg = NSView(frame: NSRect(x: 0, y: H - hH, width: W, height: hH))
         headerBg.wantsLayer = true
         headerBg.layer?.backgroundColor = NSColor(red: 0.12, green: 0.08, blue: 0.22, alpha: 1).cgColor
         cv.addSubview(headerBg)
@@ -163,24 +177,39 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         let title = NSTextField(labelWithString: "✦  Wisp")
         title.textColor = NSColor(red: 0.7, green: 0.55, blue: 1.0, alpha: 1)
         title.font = NSFont.boldSystemFont(ofSize: 12)
-        title.frame = NSRect(x: 14, y: H - headerH + (headerH - 15) / 2, width: 80, height: 15)
+        title.frame = NSRect(x: 14, y: H - hH + (hH - 15) / 2, width: 80, height: 15)
         cv.addSubview(title)
 
         counterLabel = NSTextField(labelWithString: "")
         counterLabel.textColor = NSColor(white: 1, alpha: 0.3)
         counterLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
         counterLabel.alignment = .right
-        counterLabel.frame = NSRect(x: W - 80, y: H - headerH + (headerH - 13) / 2, width: 66, height: 13)
+        counterLabel.frame = NSRect(x: W - 80, y: H - hH + (hH - 13) / 2, width: 66, height: 13)
         cv.addSubview(counterLabel)
 
-        // Thin divider
-        let div = NSView(frame: NSRect(x: 0, y: H - headerH - 1, width: W, height: 1))
-        div.wantsLayer = true
-        div.layer?.backgroundColor = NSColor(white: 1, alpha: 0.07).cgColor
-        cv.addSubview(div)
+        // Divider below header
+        let div1 = NSView(frame: NSRect(x: 0, y: H - hH - 1, width: W, height: 1))
+        div1.wantsLayer = true
+        div1.layer?.backgroundColor = NSColor(white: 1, alpha: 0.07).cgColor
+        cv.addSubview(div1)
 
-        // Scroll area
-        scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: W, height: H - headerH - 1))
+        // ── Tab bar ───────────────────────────────────────────────────────────
+        tabBar = NSView(frame: NSRect(x: 0, y: H - hH - 1 - tH, width: W, height: tH))
+        tabBar.wantsLayer = true
+        tabBar.layer?.backgroundColor = NSColor(red: 0.09, green: 0.07, blue: 0.18, alpha: 1).cgColor
+        cv.addSubview(tabBar)
+
+        // "All" tab — always present
+        addTabButton(label: "All", tag: -1)
+
+        // Divider below tab bar
+        let div2 = NSView(frame: NSRect(x: 0, y: H - hH - 1 - tH - 1, width: W, height: 1))
+        div2.wantsLayer = true
+        div2.layer?.backgroundColor = NSColor(white: 1, alpha: 0.07).cgColor
+        cv.addSubview(div2)
+
+        // ── Scroll area ───────────────────────────────────────────────────────
+        scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: W, height: scrollH))
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
@@ -191,12 +220,55 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         scrollView.documentView = contentStack
         cv.addSubview(scrollView)
 
-        // Dismiss on click in empty space
-        let click = NSClickGestureRecognizer(target: self, action: #selector(hideInfo))
-        cv.addGestureRecognizer(click)
+        let clickDismiss = NSClickGestureRecognizer(target: self, action: #selector(hideInfo))
+        cv.addGestureRecognizer(clickDismiss)
     }
 
-    // MARK: Build a single history row
+    // MARK: Tabs
+
+    func addTabButton(label: String, tag: Int) {
+        let btn = NSButton(title: label, target: self, action: #selector(tabClicked(_:)))
+        btn.isBordered = false
+        btn.tag = tag
+        btn.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        btn.contentTintColor = tag == activeTab
+            ? NSColor(white: 1, alpha: 0.9)
+            : NSColor(white: 1, alpha: 0.3)
+
+        // Measure width
+        btn.sizeToFit()
+        let w = max(btn.frame.width + 16, 40)
+
+        // Position after existing buttons
+        let x = tabButtons.reduce(CGFloat(10)) { $0 + $1.frame.width + 8 }
+        btn.frame = NSRect(x: x, y: (AppDelegate.tabH - 20) / 2, width: w, height: 20)
+
+        tabBar.addSubview(btn)
+        tabButtons.append(btn)
+        refreshTabAppearance()
+    }
+
+    @objc func tabClicked(_ sender: NSButton) {
+        activeTab = sender.tag
+        refreshTabAppearance()
+        rebuildStack()
+    }
+
+    func refreshTabAppearance() {
+        for btn in tabButtons {
+            let isActive = btn.tag == activeTab
+            if isActive {
+                let color = btn.tag == -1
+                    ? NSColor(white: 1, alpha: 0.9)
+                    : AppDelegate.sessionColors[btn.tag % AppDelegate.sessionColors.count]
+                btn.contentTintColor = color
+            } else {
+                btn.contentTintColor = NSColor(white: 1, alpha: 0.28)
+            }
+        }
+    }
+
+    // MARK: History rows
 
     func makeRow(index: Int, text: String, sessionIdx: Int) -> NSView {
         let dotW:  CGFloat = 8
@@ -221,7 +293,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             row.addSubview(sep)
         }
 
-        // Colored session dot
         let dot = NSView(frame: NSRect(x: 14, y: (rowH - dotW) / 2, width: dotW, height: dotW))
         dot.wantsLayer = true
         dot.layer?.cornerRadius = dotW / 2
@@ -243,35 +314,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         return row
     }
 
-    func appendRowToStack(_ entry: (text: String, sessionIdx: Int)) {
-        let idx = messages.count
-        let row = makeRow(index: idx, text: entry.text, sessionIdx: entry.sessionIdx)
-        let y = contentStack.frame.height
-        row.frame.origin.y = y
-        contentStack.addSubview(row)
-        contentStack.frame.size.height = y + row.frame.height
-        scrollToBottom()
-        let chatCount = sessionMap.count
-        counterLabel.stringValue = chatCount > 1
-            ? "\(messages.count) actions · \(chatCount) chats"
-            : "\(messages.count) actions"
-    }
-
     func rebuildStack() {
         contentStack.subviews.forEach { $0.removeFromSuperview() }
         contentStack.frame.size.height = 0
-        for (i, entry) in messages.enumerated() {
+
+        // Filter by active tab (-1 = all)
+        let filtered = activeTab == -1
+            ? messages
+            : messages.filter { $0.sessionIdx == activeTab }
+
+        for (i, entry) in filtered.enumerated() {
             let row = makeRow(index: i + 1, text: entry.text, sessionIdx: entry.sessionIdx)
             let y = contentStack.frame.height
             row.frame.origin.y = y
             contentStack.addSubview(row)
             contentStack.frame.size.height = y + row.frame.height
         }
-        let chatCount = sessionMap.count
-        counterLabel.stringValue = messages.isEmpty ? "" : (chatCount > 1
-            ? "\(messages.count) actions · \(chatCount) chats"
-            : "\(messages.count) actions")
+        updateCounter()
         scrollToBottom()
+    }
+
+    func updateCounter() {
+        let total = messages.count
+        let chatCount = sessionMap.count
+        counterLabel.stringValue = total == 0 ? "" : (chatCount > 1
+            ? "\(total) · \(chatCount) chats"
+            : "\(total) actions")
     }
 
     func scrollToBottom() {
@@ -282,7 +350,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         }
     }
 
-    // MARK: Show / hide (with animation)
+    // MARK: Animate open / close
 
     func orbSeedFrame() -> NSRect {
         let f = orbPanel.frame
@@ -292,25 +360,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     func destFrame() -> NSRect {
         let orbF = orbPanel.frame
         let W = AppDelegate.panelW, H = AppDelegate.panelH
-        return NSRect(
-            x: orbF.minX - W - 12,
-            y: orbF.midY - H / 2,
-            width: W, height: H)
+        return NSRect(x: orbF.minX - W - 12, y: orbF.midY - H / 2, width: W, height: H)
     }
 
-    @objc func toggleInfo() {
-        infoVisible ? hideInfo() : showInfo()
-    }
+    @objc func toggleInfo() { infoVisible ? hideInfo() : showInfo() }
 
     func showInfo() {
         rebuildStack()
-
         if !infoVisible {
             infoPanel.setFrame(orbSeedFrame(), display: false)
             infoPanel.alphaValue = 0
             infoPanel.orderFront(nil)
         }
-
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.38
             ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.34, 1.5, 0.64, 1)
@@ -323,7 +384,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     @objc func hideInfo() {
         guard infoVisible else { return }
         infoVisible = false
-
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.4, 0, 1, 0.6)
@@ -337,20 +397,37 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         })
     }
 
-    // MARK: Receive message from hook
+    // MARK: Receive from hook
 
     func show(_ message: String, session: String) {
         DispatchQueue.main.async {
-            // Assign a sequential index to each new session
-            if self.sessionMap[session] == nil {
-                self.sessionMap[session] = self.sessionMap.count
+            let isNew = self.sessionMap[session] == nil
+            if isNew {
+                let idx = self.sessionMap.count
+                self.sessionMap[session] = idx
+                // Add a colored tab for this chat
+                let color = AppDelegate.sessionColors[idx % AppDelegate.sessionColors.count]
+                let label = "Chat \(idx + 1)"
+                self.addTabButton(label: label, tag: idx)
+                // Tint the orb to pulse in that chat's color when it fires
+                _ = color  // used visually via pulse
             }
-            let idx = self.sessionMap[session]!
+
+            let idx   = self.sessionMap[session]!
             let entry = (text: message, sessionIdx: idx)
             self.messages.append(entry)
             self.orbView.pulse()
-            if self.infoVisible {
-                self.appendRowToStack(entry)
+            self.updateCounter()
+
+            // Live-append only if this entry passes the active tab filter
+            if self.infoVisible && (self.activeTab == -1 || self.activeTab == idx) {
+                let rowNum = self.contentStack.subviews.count + 1
+                let row = self.makeRow(index: rowNum, text: entry.text, sessionIdx: entry.sessionIdx)
+                let y = self.contentStack.frame.height
+                row.frame.origin.y = y
+                self.contentStack.addSubview(row)
+                self.contentStack.frame.size.height = y + row.frame.height
+                self.scrollToBottom()
             }
         }
     }
