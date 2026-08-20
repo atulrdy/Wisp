@@ -372,23 +372,26 @@ def start_ball():
 
 def session_title():
     """Read the conversation title from Claude Code's JSONL file."""
+    import glob
     session_id = os.environ.get('CLAUDE_CODE_SESSION_ID', '')
-    cwd = os.getcwd()
-    proj = cwd.replace('/', '-')
-    path = os.path.expanduser(f'~/.claude/projects/{proj}/{session_id}.jsonl')
+    if not session_id:
+        return os.path.basename(os.getcwd()) or 'Claude'
+    # Session files can be anywhere under ~/.claude/projects/
+    matches = glob.glob(os.path.expanduser(f'~/.claude/projects/**/{session_id}.jsonl'), recursive=True)
     title = None
-    try:
-        with open(path) as f:
-            for line in f:
-                try:
-                    d = json.loads(line)
-                    if d.get('type') == 'custom-title' and d.get('customTitle'):
-                        title = d['customTitle']
-                except Exception:
-                    pass
-    except Exception:
-        pass
-    return title or os.path.basename(cwd) or 'Claude'
+    for path in matches:
+        try:
+            with open(path) as f:
+                for line in f:
+                    try:
+                        d = json.loads(line)
+                        if d.get('type') == 'custom-title' and d.get('customTitle'):
+                            title = d['customTitle']
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    return title or os.path.basename(os.getcwd()) or 'Claude'
 
 
 def post(message):
