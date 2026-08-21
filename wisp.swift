@@ -420,8 +420,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             // Auto-open so the description is visible before the user clicks Allow
             let wasVisible = self.infoVisible
 
-            // Switch to this chat's tab so the latest action is front and center
-            if self.activeTab != -1 { self.activeTab = idx }
+            // Stay on whatever tab the user is on — don't hijack their view
+            // New message appears if it matches the current tab, or always in All
             self.showInfo()
 
             if !wasVisible {
