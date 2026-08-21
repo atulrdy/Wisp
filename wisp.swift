@@ -94,11 +94,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     // History
     var scrollView:   NSScrollView!
     var contentStack: FlippedView!
-    var messages: [(text: String, sessionIdx: Int)] = []
+    var messages: [(text: String, sessionIdx: Int, needsPermission: Bool)] = []
     var sessionMap: [String: Int] = [:]
 
     var infoVisible = false
     var autoDismissTimer: Timer?
+    var lastNeedsPermission = false
+    var headerBgView: NSView!
+    var headerTitleLabel: NSTextField!
 
     static let sessionColors: [NSColor] = [
         NSColor(red: 0.65, green: 0.5,  blue: 1.0,  alpha: 1),  // purple
@@ -174,12 +177,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         headerBg.wantsLayer = true
         headerBg.layer?.backgroundColor = NSColor(red: 0.12, green: 0.08, blue: 0.22, alpha: 1).cgColor
         cv.addSubview(headerBg)
+        headerBgView = headerBg
 
         let title = NSTextField(labelWithString: "✦  Wisp")
         title.textColor = NSColor(red: 0.7, green: 0.55, blue: 1.0, alpha: 1)
         title.font = NSFont.boldSystemFont(ofSize: 12)
-        title.frame = NSRect(x: 14, y: H - hH + (hH - 15) / 2, width: 80, height: 15)
+        title.frame = NSRect(x: 14, y: H - hH + (hH - 15) / 2, width: 150, height: 15)
         cv.addSubview(title)
+        headerTitleLabel = title
 
         counterLabel = NSTextField(labelWithString: "")
         counterLabel.textColor = NSColor(white: 1, alpha: 0.3)
@@ -223,6 +228,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
         // Dismiss by clicking the orb again (toggleInfo) — no click-away here
         // so tab clicks don't accidentally close the panel
+    }
+
+    func updatePanelStyle() {
+        guard let cv = infoPanel?.contentView else { return }
+        if lastNeedsPermission {
+            cv.layer?.borderColor = NSColor(red: 1.0, green: 0.65, blue: 0.05, alpha: 0.65).cgColor
+            headerBgView.layer?.backgroundColor = NSColor(red: 0.18, green: 0.10, blue: 0.01, alpha: 1).cgColor
+            headerBgView.layer?.cornerRadius = 12
+            headerBgView.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+            headerTitleLabel.stringValue = "⚠  Needs your approval"
+            headerTitleLabel.textColor = NSColor(red: 1.0, green: 0.75, blue: 0.3, alpha: 1)
+        } else {
+            cv.layer?.borderColor = NSColor(red: 0.5, green: 0.3, blue: 1.0, alpha: 0.35).cgColor
+            headerBgView.layer?.backgroundColor = NSColor(red: 0.12, green: 0.08, blue: 0.22, alpha: 1).cgColor
+            headerBgView.layer?.cornerRadius = 0
+            headerTitleLabel.stringValue = "✦  Wisp"
+            headerTitleLabel.textColor = NSColor(red: 0.7, green: 0.55, blue: 1.0, alpha: 1)
+        }
     }
 
     // MARK: Tabs
@@ -271,13 +294,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
     // MARK: History rows
 
-    func makeRow(index: Int, text: String, sessionIdx: Int) -> NSView {
+    func makeRow(index: Int, text: String, sessionIdx: Int, needsPermission: Bool = false) -> NSView {
         let dotW:  CGFloat = 8
         let numW:  CGFloat = 28
         let pad:   CGFloat = 10
         let textX  = 14 + dotW + 6 + numW
         let textW  = AppDelegate.panelW - textX - 10
-        let color  = AppDelegate.sessionColors[sessionIdx % AppDelegate.sessionColors.count]
+        let color  = needsPermission
+            ? NSColor(red: 1.0, green: 0.65, blue: 0.1, alpha: 1)
+            : AppDelegate.sessionColors[sessionIdx % AppDelegate.sessionColors.count]
 
         let tmp = NSTextField(wrappingLabelWithString: text)
         tmp.font = NSFont.systemFont(ofSize: 12)
@@ -286,29 +311,41 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         let rowH = textH + pad * 2
 
         let row = NSView(frame: NSRect(x: 0, y: 0, width: AppDelegate.panelW, height: rowH))
+        row.wantsLayer = true
+        if needsPermission {
+            row.layer?.backgroundColor = NSColor(red: 1.0, green: 0.65, blue: 0.05, alpha: 0.08).cgColor
+        }
 
         if index > 1 {
             let sep = NSView(frame: NSRect(x: 14, y: 0, width: AppDelegate.panelW - 28, height: 0.5))
             sep.wantsLayer = true
-            sep.layer?.backgroundColor = NSColor(white: 1, alpha: 0.06).cgColor
+            sep.layer?.backgroundColor = needsPermission
+                ? NSColor(red: 1.0, green: 0.65, blue: 0.05, alpha: 0.2).cgColor
+                : NSColor(white: 1, alpha: 0.06).cgColor
             row.addSubview(sep)
         }
 
         let dot = NSView(frame: NSRect(x: 14, y: (rowH - dotW) / 2, width: dotW, height: dotW))
         dot.wantsLayer = true
         dot.layer?.cornerRadius = dotW / 2
-        dot.layer?.backgroundColor = color.withAlphaComponent(0.8).cgColor
+        dot.layer?.backgroundColor = color.withAlphaComponent(0.9).cgColor
         row.addSubview(dot)
 
-        let numLabel = NSTextField(labelWithString: "#\(index)")
-        numLabel.textColor = color.withAlphaComponent(0.5)
-        numLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+        let numLabel = NSTextField(labelWithString: needsPermission ? "⚠" : "#\(index)")
+        numLabel.textColor = color.withAlphaComponent(needsPermission ? 1.0 : 0.5)
+        numLabel.font = needsPermission
+            ? NSFont.boldSystemFont(ofSize: 11)
+            : NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .medium)
         numLabel.frame = NSRect(x: 14 + dotW + 6, y: pad, width: numW - 4, height: 13)
         row.addSubview(numLabel)
 
         let tf = NSTextField(wrappingLabelWithString: text)
-        tf.textColor = NSColor(white: 0.88, alpha: 1)
-        tf.font = NSFont.systemFont(ofSize: 12)
+        tf.textColor = needsPermission
+            ? NSColor(red: 1.0, green: 0.9, blue: 0.7, alpha: 1)
+            : NSColor(white: 0.88, alpha: 1)
+        tf.font = needsPermission
+            ? NSFont.systemFont(ofSize: 12, weight: .medium)
+            : NSFont.systemFont(ofSize: 12)
         tf.frame = NSRect(x: textX, y: pad, width: textW, height: textH)
         row.addSubview(tf)
 
@@ -325,7 +362,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             : messages.filter { $0.sessionIdx == activeTab }
 
         for (i, entry) in filtered.enumerated() {
-            let row = makeRow(index: i + 1, text: entry.text, sessionIdx: entry.sessionIdx)
+            let row = makeRow(index: i + 1, text: entry.text, sessionIdx: entry.sessionIdx, needsPermission: entry.needsPermission)
             let y = contentStack.frame.height
             row.frame.origin.y = y
             contentStack.addSubview(row)
@@ -402,7 +439,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
 
     // MARK: Receive from hook
 
-    func show(_ message: String, session: String, name: String) {
+    func show(_ message: String, session: String, name: String, needsPermission: Bool = false) {
         DispatchQueue.main.async {
             let isNew = self.sessionMap[session] == nil
             if isNew {
@@ -412,8 +449,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             }
 
             let idx   = self.sessionMap[session]!
-            let entry = (text: message, sessionIdx: idx)
+            let entry = (text: message, sessionIdx: idx, needsPermission: needsPermission)
             self.messages.append(entry)
+            self.lastNeedsPermission = needsPermission
+            self.updatePanelStyle()
             self.orbView.pulse()
             self.updateCounter()
 
@@ -476,7 +515,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
                    let data = String(req[sep.upperBound...]).data(using: .utf8),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: String],
                    let msg  = json["message"] {
-                    self.show(msg, session: json["session"] ?? "0", name: json["name"] ?? "Claude")
+                    let perm = json["perm"] == "1"
+                    self.show(msg, session: json["session"] ?? "0", name: json["name"] ?? "Claude", needsPermission: perm)
                 }
                 let resp = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
                 _ = resp.withCString { Darwin.send(client, $0, Int(strlen($0)), 0) }

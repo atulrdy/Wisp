@@ -394,11 +394,41 @@ def session_title():
     return title or os.path.basename(os.getcwd()) or 'Claude'
 
 
-def post(message):
+def requires_permission(tool_name, tool_input):
+    """Returns True if this tool call will show an Allow/Deny dialog (not auto-allowed)."""
+    import fnmatch
+    patterns = []
+    for p in ('~/.claude/settings.json', '~/.claude/settings.local.json'):
+        try:
+            with open(os.path.expanduser(p)) as f:
+                d = json.load(f)
+            patterns.extend(d.get('permissions', {}).get('allow', []))
+        except Exception:
+            pass
+
+    if tool_name == 'Bash':
+        s = f"Bash({tool_input.get('command', '')})"
+    elif tool_name == 'WebSearch':
+        s = 'WebSearch'
+    elif tool_name == 'WebFetch':
+        import urllib.parse as _up
+        s = f"WebFetch(domain:{_up.urlparse(tool_input.get('url', '')).netloc})"
+    else:
+        path = tool_input.get('file_path') or tool_input.get('path') or ''
+        s = f"{tool_name}({path})"
+
+    def _match(call, pat):
+        return fnmatch.fnmatch(call, pat) or fnmatch.fnmatch(call, pat.replace('//', '/', 1))
+
+    return not any(_match(s, p) for p in patterns)
+
+
+def post(message, perm=False):
     data = json.dumps({
         'message': message,
         'session': str(os.getppid()),
         'name': session_title(),
+        'perm': '1' if perm else '0',
     }).encode()
     req = urllib.request.Request(
         f'http://localhost:{PORT}',
@@ -536,6 +566,7 @@ try:
         description = translate(tool_name, tool_input)
         log(f"Fallback: {description!r}")
 
-    post(description)
+    perm = requires_permission(tool_name, tool_input)
+    post(description, perm)
 except Exception as e:
     log(f"Outer fail: {e}")
