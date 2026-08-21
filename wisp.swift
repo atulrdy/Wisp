@@ -292,7 +292,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             cv.layer?.borderColor = NSColor(red: 1.0, green: 0.65, blue: 0.05, alpha: 0.65).cgColor
             headerBgView.layer?.backgroundColor = NSColor(red: 0.18, green: 0.10, blue: 0.01, alpha: 1).cgColor
             headerBgView.layer?.cornerRadius = 12
-            headerBgView.layer?.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
             headerTitleLabel.stringValue = "⚠  Needs your approval"
             headerTitleLabel.textColor = NSColor(red: 1.0, green: 0.75, blue: 0.3, alpha: 1)
         } else {
