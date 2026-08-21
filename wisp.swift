@@ -100,6 +100,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     var infoVisible = false
     var autoDismissTimer: Timer?
     var lastNeedsPermission = false
+    var panelBgView: NSView!
     var headerBgView: NSView!
     var headerTitleLabel: NSTextField!
 
@@ -217,16 +218,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
         infoPanel.level = .floating
-        infoPanel.backgroundColor = NSColor(red: 0.07, green: 0.05, blue: 0.13, alpha: 0.97)
+        infoPanel.backgroundColor = .clear   // transparent — color comes from panelBgView inside
         infoPanel.isOpaque = false
         infoPanel.hasShadow = true
 
         let cv = infoPanel.contentView!
         cv.wantsLayer = true
         cv.layer?.cornerRadius = 16
-        cv.layer?.masksToBounds = true
+        cv.layer?.masksToBounds = true  // clips all children (incl. panelBgView) to the rounded shape
         cv.layer?.borderColor = NSColor(red: 0.5, green: 0.3, blue: 1.0, alpha: 0.35).cgColor
         cv.layer?.borderWidth = 1
+
+        // ── Panel background (inside clipping boundary so corners stay transparent) ──
+        let bgView = NSView(frame: NSRect(x: 0, y: 0, width: W, height: H))
+        bgView.wantsLayer = true
+        bgView.layer?.backgroundColor = NSColor(red: 0.07, green: 0.05, blue: 0.13, alpha: 0.97).cgColor
+        cv.addSubview(bgView)
+        panelBgView = bgView
 
         // ── Header ────────────────────────────────────────────────────────────
         let headerBg = NSView(frame: NSRect(x: 0, y: H - hH, width: W, height: hH))
@@ -289,15 +297,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     func updatePanelStyle() {
         guard let cv = infoPanel?.contentView else { return }
         if lastNeedsPermission {
-            // Tint the whole panel amber so rounded-corner gaps don't expose dark-purple
-            infoPanel.backgroundColor = NSColor(red: 0.10, green: 0.07, blue: 0.01, alpha: 0.97)
+            panelBgView.layer?.backgroundColor = NSColor(red: 0.10, green: 0.07, blue: 0.01, alpha: 0.97).cgColor
             cv.layer?.borderColor = NSColor(red: 1.0, green: 0.65, blue: 0.05, alpha: 0.65).cgColor
             headerBgView.layer?.backgroundColor = NSColor(red: 0.20, green: 0.13, blue: 0.02, alpha: 1).cgColor
             headerBgView.layer?.cornerRadius = 12
             headerTitleLabel.stringValue = "⚠  Needs your approval"
             headerTitleLabel.textColor = NSColor(red: 1.0, green: 0.75, blue: 0.3, alpha: 1)
         } else {
-            infoPanel.backgroundColor = NSColor(red: 0.07, green: 0.05, blue: 0.13, alpha: 0.97)
+            panelBgView.layer?.backgroundColor = NSColor(red: 0.07, green: 0.05, blue: 0.13, alpha: 0.97).cgColor
             cv.layer?.borderColor = NSColor(red: 0.5, green: 0.3, blue: 1.0, alpha: 0.35).cgColor
             headerBgView.layer?.backgroundColor = NSColor(red: 0.12, green: 0.08, blue: 0.22, alpha: 1).cgColor
             headerBgView.layer?.cornerRadius = 0
