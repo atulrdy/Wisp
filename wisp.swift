@@ -121,6 +121,62 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
         setupOrb()
         setupInfoPanel()
         startServer()
+        // Check for updates 15 s after launch so startup isn't blocked
+        Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { _ in
+            Thread.detachNewThread { self.performUpdateCheck() }
+        }
+    }
+
+    // MARK: - Auto-update
+
+    func performUpdateCheck() {
+        let installDir = URL(fileURLWithPath: CommandLine.arguments[0])
+            .deletingLastPathComponent().path
+        let localVersionPath = "\(installDir)/VERSION"
+        let localVersion = (try? String(contentsOfFile: localVersionPath, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "0.0.0"
+
+        let base = "https://raw.githubusercontent.com/atulrdy/Wisp/main/"
+        guard let remoteVersionURL = URL(string: "\(base)VERSION"),
+              let remoteRaw = try? String(contentsOf: remoteVersionURL, encoding: .utf8)
+        else { return }
+        let remoteVersion = remoteRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !remoteVersion.isEmpty, remoteVersion != localVersion else { return }
+
+        // Download sources
+        guard let pyURL  = URL(string: "\(base)wisp.py"),
+              let swURL  = URL(string: "\(base)wisp.swift"),
+              let pyData = try? Data(contentsOf: pyURL),
+              let swData = try? Data(contentsOf: swURL)
+        else { return }
+
+        // Compile new binary
+        let pid    = ProcessInfo.processInfo.processIdentifier
+        let tmpSrc = "/tmp/wisp-update-\(pid).swift"
+        let tmpBin = "/tmp/wisp-ball-new-\(pid)"
+        guard (try? swData.write(to: URL(fileURLWithPath: tmpSrc))) != nil else { return }
+
+        let task = Process()
+        task.launchPath = "/usr/bin/swiftc"
+        task.arguments  = [tmpSrc, "-o", tmpBin]
+        task.launch()
+        task.waitUntilExit()
+        try? FileManager.default.removeItem(atPath: tmpSrc)
+        guard task.terminationStatus == 0 else { return }
+
+        // Swap files
+        try? pyData.write(to: URL(fileURLWithPath: "\(installDir)/wisp.py"))
+        let destBin = "\(installDir)/wisp-ball"
+        try? FileManager.default.removeItem(atPath: destBin)
+        try? FileManager.default.moveItem(atPath: tmpBin, toPath: destBin)
+        try? remoteVersion.write(toFile: localVersionPath, atomically: true, encoding: .utf8)
+
+        // Notify user, then exit — LaunchAgent restarts with new binary
+        DispatchQueue.main.async {
+            self.show("Updated Wisp to v\(remoteVersion) — restarting now.",
+                      session: "__wisp_update__", name: "Wisp")
+            Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { _ in exit(0) }
+        }
     }
 
     // MARK: Orb

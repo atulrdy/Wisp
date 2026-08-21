@@ -45,6 +45,7 @@ echo "  ✓ wisp-ball compiled"
 mkdir -p "$INSTALL_DIR"
 cp wisp.py   "$INSTALL_DIR/wisp.py"
 cp wisp-ball "$INSTALL_DIR/wisp-ball"
+cp VERSION   "$INSTALL_DIR/VERSION"
 chmod +x "$INSTALL_DIR/wisp-ball"
 
 # Write ai-keys.env (only lines with a value)

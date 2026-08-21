@@ -370,33 +370,82 @@ def start_ball():
             return
 
 
-def session_title():
-    """Read the conversation title from Claude Code's JSONL file."""
+def _session_jsonl_path():
     import glob
     session_id = os.environ.get('CLAUDE_CODE_SESSION_ID', '')
     if not session_id:
-        return os.path.basename(os.getcwd()) or 'Claude'
-    # Session files can be anywhere under ~/.claude/projects/
+        return None
     matches = glob.glob(os.path.expanduser(f'~/.claude/projects/**/{session_id}.jsonl'), recursive=True)
+    return matches[0] if matches else None
+
+
+def session_title():
+    """Read the conversation title from Claude Code's JSONL file."""
+    path = _session_jsonl_path()
+    if not path:
+        return os.path.basename(os.getcwd()) or 'Claude'
     title = None
-    for path in matches:
-        try:
-            with open(path) as f:
-                for line in f:
-                    try:
-                        d = json.loads(line)
-                        if d.get('type') == 'custom-title' and d.get('customTitle'):
-                            title = d['customTitle']
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+    try:
+        with open(path) as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                    if d.get('type') == 'custom-title' and d.get('customTitle'):
+                        title = d['customTitle']
+                except Exception:
+                    pass
+    except Exception:
+        pass
     return title or os.path.basename(os.getcwd()) or 'Claude'
+
+
+def recent_user_messages(n=3):
+    """Return the last n user message texts from the session JSONL, newest-last."""
+    path = _session_jsonl_path()
+    if not path:
+        return []
+    try:
+        # Read tail of potentially large file — 8 KB is enough for recent messages
+        with open(path, 'rb') as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 8192))
+            tail = f.read().decode('utf-8', errors='ignore')
+        msgs = []
+        for line in tail.splitlines():
+            try:
+                d = json.loads(line)
+                # JSONL records with role=user and content text
+                if d.get('type') == 'user':
+                    content = d.get('message', {}).get('content', '')
+                    if isinstance(content, str) and content.strip():
+                        msgs.append(content.strip()[:300])
+                    elif isinstance(content, list):
+                        for part in content:
+                            if isinstance(part, dict) and part.get('type') == 'text':
+                                t = part.get('text', '').strip()
+                                if t:
+                                    msgs.append(t[:300])
+            except Exception:
+                pass
+        return msgs[-n:]
+    except Exception:
+        return []
 
 
 def requires_permission(tool_name, tool_input):
     """Returns True if this tool call will show an Allow/Deny dialog (not auto-allowed)."""
     import fnmatch
+
+    # Claude Code never prompts for these — they are inherently read-only/safe
+    _ALWAYS_SAFE = {
+        'Read', 'LS', 'Glob', 'Grep', 'Task', 'TodoRead',
+        'NotebookRead', 'ExitPlanMode',
+    }
+    if tool_name in _ALWAYS_SAFE:
+        return False
+
+    # Build match string, then check against the user's allow list
     patterns = []
     for p in ('~/.claude/settings.json', '~/.claude/settings.local.json'):
         try:
@@ -441,11 +490,13 @@ def post(message, perm=False):
 PROMPT = (
     "An AI coding assistant is about to perform this action:\n"
     "Tool: {tool_name}\n"
-    "Details: {tool_input}\n\n"
-    "Complete this sentence for a non-technical person who may need to Allow or Deny this action:\n"
+    "Details: {tool_input}\n"
+    "{context_block}"
+    "\nComplete this sentence for a non-technical person who may need to Allow or Deny this action:\n"
     "'Claude wants to...'\n"
     "Write only the part after 'Claude wants to'.\n"
     "Include TWO things: (1) specifically WHAT it's doing — mention the actual filename, command, or search term, and (2) WHY — the likely reason or goal behind the action.\n"
+    "Use the recent conversation context above to infer the WHY if available.\n"
     "One sentence. Plain English. No flags, no code syntax.\n\n"
     "Good completions (just the part after 'Claude wants to...'):\n"
     "- 'read settings.json to check what hooks and permissions are already configured'\n"
@@ -465,9 +516,15 @@ def _llm_call(url, headers, payload):
 
 
 def translate_with_ai(tool_name, tool_input):
+    msgs = recent_user_messages(3)
+    if msgs:
+        ctx = "Recent conversation context:\n" + "\n".join(f"- {m}" for m in msgs) + "\n"
+    else:
+        ctx = ""
     prompt = PROMPT.format(
         tool_name=tool_name,
-        tool_input=json.dumps(tool_input, ensure_ascii=False)
+        tool_input=json.dumps(tool_input, ensure_ascii=False),
+        context_block=ctx,
     )
 
     # Try each provider in order — first key found wins
