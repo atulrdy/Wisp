@@ -289,12 +289,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, @unchecked Sendable {
     func updatePanelStyle() {
         guard let cv = infoPanel?.contentView else { return }
         if lastNeedsPermission {
+            // Tint the whole panel amber so rounded-corner gaps don't expose dark-purple
+            infoPanel.backgroundColor = NSColor(red: 0.10, green: 0.07, blue: 0.01, alpha: 0.97)
             cv.layer?.borderColor = NSColor(red: 1.0, green: 0.65, blue: 0.05, alpha: 0.65).cgColor
-            headerBgView.layer?.backgroundColor = NSColor(red: 0.18, green: 0.10, blue: 0.01, alpha: 1).cgColor
+            headerBgView.layer?.backgroundColor = NSColor(red: 0.20, green: 0.13, blue: 0.02, alpha: 1).cgColor
             headerBgView.layer?.cornerRadius = 12
             headerTitleLabel.stringValue = "⚠  Needs your approval"
             headerTitleLabel.textColor = NSColor(red: 1.0, green: 0.75, blue: 0.3, alpha: 1)
         } else {
+            infoPanel.backgroundColor = NSColor(red: 0.07, green: 0.05, blue: 0.13, alpha: 0.97)
             cv.layer?.borderColor = NSColor(red: 0.5, green: 0.3, blue: 1.0, alpha: 0.35).cgColor
             headerBgView.layer?.backgroundColor = NSColor(red: 0.12, green: 0.08, blue: 0.22, alpha: 1).cgColor
             headerBgView.layer?.cornerRadius = 0
